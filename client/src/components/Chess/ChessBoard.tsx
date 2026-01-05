@@ -28,11 +28,19 @@ export const ChessBoard: React.FC = () => {
                 return;
             }
 
+            console.log(res);
             setBoard(res.board);
             setIsWhiteTurn(res.isWhiteTurn);
             setCurrentPiece(null);
             setCurrentPieceName(null);
             setAvailableSteps([]);
+            if (res.status === "Game Over") {
+                var winner = "Black"
+                if (isWhiteTurn)
+                    winner = "White"
+
+                alert(`Game Over! ${winner} won!`)
+            }
             return;
         }
 
@@ -87,7 +95,10 @@ export const ChessBoard: React.FC = () => {
 
     const onNewGameClick = () => {
         newGame();
+        setCurrentPiece(null);
+        setCurrentPieceName(null);
         setAvailableSteps([]);
+        setIsWhiteTurn(true);
         return;
     };
 
