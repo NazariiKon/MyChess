@@ -13,15 +13,26 @@ class Move(BaseModel):
     to_row: int
     to_col: int
 
+# default_board = [
+#     ["r","n","b"," ","k","b","n","r"],
+#     ["p","p","p","p"," ","p","p","p"],
+#     [" "," "," "," ","Q"," "," "," "],
+#     [" "," "," "," ","p"," "," "," "],
+#     [" "," "," "," ","P"," "," "," "],
+#     [" "," "," "," ","q"," "," "," "],
+#     ["P","P","P","P"," ","P","P","P"],
+#     ["R","N","B"," ","K","B","N","R"]
+# ]
+
 default_board = [
-    ["r","n","b","q","k","b","n","r"],
-    ["p","p","p","p","p","p","p","p"],
-    [" "," "," "," "," "," "," "," "],
-    [" "," "," "," "," "," "," "," "],
-    [" "," "," "," "," "," "," "," "],
-    [" "," "," "," "," "," "," "," "],
-    ["P","P","P","P","P","P","P","P"],
-    ["R","N","B","Q","K","B","N","R"]
+    ["r","n","b"," ","k"," "," ","r"],
+    ["p","p","p","p"," ","p","p","p"],
+    [" "," "," "," "," ","Q"," ","n"],
+    [" "," ","b"," ","p"," "," "," "],
+    [" "," ","B"," ","P"," "," "," "],
+    [" "," "," "," "," ","q"," ","N"],
+    ["P","P","P","P"," ","P","P","P"],
+    ["R","N","B"," ","K"," "," ","R"]
 ]
 
 class ChessGame:
@@ -54,21 +65,12 @@ class ChessGame:
         self.board[move.to_row][move.to_col] = piece
         self.board[move.from_row][move.from_col] = " "
 
-        if piece == "k" or piece == "K":
-            if move.from_col - move.to_col == -2:
-                # So its Castling
-                if piece == "K": rock = "R"
-                else: rock = "r"
-                self.board[move.from_row][move.from_col + 1] = rock
-                self.board[move.from_row][move.to_col + 1] = " "
-
-            if move.from_col - move.to_col == 2:
-                # So its Castling
-                if piece == "K": rock = "R"
-                else: rock = "r"
-                self.board[move.from_row][move.to_col + 1] = rock
-                self.board[move.from_row][move.to_col - 2] = " "
-            
+        if piece == "k" or piece == "K" and not self.is_in_check(not self.isWhiteTurn):
+            if abs(move.to_col - move.from_col) == 2:
+                rock_from = 7 if move.to_col > move.from_col else 0
+                rock_to = move.to_col - 1 if move.to_col > move.from_col else move.to_col + 1
+                self.board[move.from_row][rock_to] = self.board[move.from_row][rock_from]
+                self.board[move.from_row][rock_from] = " "
 
         if self.is_in_check(not self.isWhiteTurn):
             self.isWhiteTurn = not self.isWhiteTurn
@@ -151,20 +153,50 @@ class ChessGame:
                 if self.board[r][c] == target:
                     return [r, c]
 
-    def is_in_check(self, white: bool):
-        target = "K" if white else "k"
-        king_pos = self.find_piece(target)
-
-        opponent_color = str.islower if white else str.isupper
-
+    def isCellUnderAttack(self, row, col, checkColor):
         for r in range(8):
             for c in range(8):
                 piece = self.board[r][c]
-                if piece != " " and opponent_color(piece):
-                    attacks = self.calculate_steps(r, c)
-                    if king_pos in attacks:
+                if piece != " " and checkColor(piece):
+                    if piece.lower() == "k": attacks = self.king_steps(piece == "K", r, c)
+                    else: attacks = self.calculate_steps(r, c)
+                    if [row, col] in attacks:
                         return True
         return False
+
+    def is_in_check(self, white: bool):
+        target = "K" if white else "k"
+        king_pos = self.find_piece(target)
+        opponent_color = str.islower if white else str.isupper
+        return self.isCellUnderAttack(king_pos[0], king_pos[1], opponent_color)
+    
+    def king_castiling(self, isWhite, row, col):
+        res = []
+        if (isWhite and self.isWKingMoved) or (not isWhite and self.isBKingMoved):
+            return res
+        
+        opponent_color = str.islower if isWhite else str.isupper
+        default_row = 7 if isWhite else 0
+        
+        if self.isCellUnderAttack(row, col, opponent_color):
+            return res
+        
+        path_ok = True
+        for c in range(5, 7):
+            if self.board[default_row][c] != " " or self.isCellUnderAttack(default_row, c, opponent_color):
+                path_ok = False
+        if path_ok and self.board[default_row][7] == ("R" if isWhite else "r"):
+            res.append([row, col + 2])
+        
+        path_ok = True
+        for c in range(1, 4):
+            if self.board[default_row][c] != " " or self.isCellUnderAttack(default_row, c, opponent_color):
+                path_ok = False
+        if path_ok and self.board[default_row][0] == ("R" if isWhite else "r"):
+            res.append([row, col - 2])
+        
+        return res
+
 
     def king_steps(self, isWhite, row, col):
         if isWhite: check = str.islower
@@ -184,26 +216,35 @@ class ChessGame:
                 continue
 
         # Castling
-        if (isWhite and not self.isWKingMoved) or (not isWhite and not self.isBKingMoved):
-            if isWhite: default_row = 7
-            else: default_row = 0
-            rc = 5
-            lc = 3
-            # go right
-            while rc < 7 and self.board[default_row][rc] == " ":
-                rc += 1
-            
-            # go left
-            while lc >= 0 and self.board[default_row][lc] == " ":
-                lc -= 1
-                
-            # Check is the Rock is on the right
-            if (isWhite and self.board[default_row][rc] == "R") or (not isWhite and self.board[default_row][rc] == "r"):
-                res.append([row, col + 2])
+        # if (isWhite and not self.isWKingMoved) or (not isWhite and not self.isBKingMoved):
+        #     if isWhite: 
+        #         default_row = 7
+        #         opponent_color = str.islower
 
-            # Check is the Rock is on the left
-            if (isWhite and self.board[default_row][lc] == "R") or (not isWhite and self.board[default_row][lc] == "r"):
-                res.append([row, col - 2])
+        #     else: 
+        #         default_row = 0
+        #         opponent_color = str.isupper
+        #     rc = 5
+        #     lc = 3
+        #     # go right
+        #     while rc < 7 and self.board[default_row][rc] == " ":
+        #         if self.isCellUnderAttack(default_row, rc, opponent_color):
+        #             break
+        #         rc += 1
+            
+        #     # go left
+        #     while lc >= 0 and self.board[default_row][lc] == " ":
+        #         if self.isCellUnderAttack(default_row, lc, opponent_color):
+        #             break
+        #         lc -= 1
+                
+        #     # Check is the Rock is on the right
+        #     if (isWhite and self.board[default_row][rc] == "R") or (not isWhite and self.board[default_row][rc] == "r"):
+        #         res.append([row, col + 2])
+
+        #     # Check is the Rock is on the left
+        #     if (isWhite and self.board[default_row][lc] == "R") or (not isWhite and self.board[default_row][lc] == "r"):
+        #         res.append([row, col - 2])
 
         return res
 
@@ -331,6 +372,7 @@ class ChessGame:
                 res = self.queen_steps(piece == "Q", row, col)
             case "k" | "K":
                 res = self.king_steps(piece == "K", row, col)
+                res += self.king_castiling(piece == "K", row, col)
 
         return res
 
