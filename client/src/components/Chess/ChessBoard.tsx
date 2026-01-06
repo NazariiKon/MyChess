@@ -47,6 +47,7 @@ export const ChessBoard: React.FC = () => {
         if (piece !== " ") {
             setCurrentPiece([row, col]);
             setCurrentPieceName(piece);
+            if (isWhiteTurn && piece === piece.toLowerCase() || !isWhiteTurn && piece === piece.toUpperCase()) return;
             const steps = await getSteps(row, col);
             setAvailableSteps(steps || []);
             setError(null);

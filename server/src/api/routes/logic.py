@@ -1,3 +1,4 @@
+import random
 from fastapi import APIRouter
 from pydantic import BaseModel
 from fastapi import Depends
@@ -24,9 +25,12 @@ default_board = [
 ]
 
 class ChessGame:
+
     def __init__(self):
         self.board = [row[:] for row in default_board]
         self.isWhiteTurn = True
+        self.isWKingMoved = False
+        self.isBKingMoved = False
 
     def get_board_copy(self):
         return [[self.board[r][c] for c in range(8)] for r in range(8)]
@@ -42,12 +46,29 @@ class ChessGame:
             return {"Error": "Black's turn"}
         board_cpy = self.get_board_copy()
         status = None
+
         self.isWhiteTurn = not self.isWhiteTurn
         steps = self.calculate_steps(move.from_row, move.from_col)
         if [move.to_row, move.to_col] not in steps:
             return {"Error": "Invalid move"}
         self.board[move.to_row][move.to_col] = piece
         self.board[move.from_row][move.from_col] = " "
+
+        if piece == "k" or piece == "K":
+            if move.from_col - move.to_col == -2:
+                # So its Castling
+                if piece == "K": rock = "R"
+                else: rock = "r"
+                self.board[move.from_row][move.from_col + 1] = rock
+                self.board[move.from_row][move.to_col + 1] = " "
+
+            if move.from_col - move.to_col == 2:
+                # So its Castling
+                if piece == "K": rock = "R"
+                else: rock = "r"
+                self.board[move.from_row][move.to_col + 1] = rock
+                self.board[move.from_row][move.to_col - 2] = " "
+            
 
         if self.is_in_check(not self.isWhiteTurn):
             self.isWhiteTurn = not self.isWhiteTurn
@@ -64,7 +85,12 @@ class ChessGame:
         if self.is_in_check(self.isWhiteTurn):
             if self.is_checkmate():
                 status = "Game Over"
-            
+
+        if piece == "k": 
+            self.isBKingMoved = True
+        elif piece == "K": 
+            self.isWKingMoved = True
+
         return {
             "board": self.get_board(),
             "isWhiteTurn": self.isWhiteTurn,
@@ -75,38 +101,51 @@ class ChessGame:
         if not self.is_in_check(self.isWhiteTurn):
             return False
         
-        # Тестим каждый возможный ход текущей стороны
         for fr in range(8):
             for fc in range(8):
                 piece = self.board[fr][fc]
                 if (self.isWhiteTurn and piece.islower()) or (not self.isWhiteTurn and piece.isupper()):
-                    continue  # чужая фигура
+                    continue
                     
                 moves = self.calculate_steps(fr, fc)
                 for to_pos in moves:
                     tr, tc = to_pos
                     
-                    # Undo-тест
                     saved_from = self.board[fr][fc]
                     saved_to = self.board[tr][tc]
                     
                     self.board[tr][tc] = saved_from
                     self.board[fr][fc] = " "
                     
-                    still_check = self.is_in_check(self.isWhiteTurn)  # шах остался?
+                    still_check = self.is_in_check(self.isWhiteTurn) 
                     
-                    # Откат
                     self.board[fr][fc] = saved_from
                     self.board[tr][tc] = saved_to
                     
-                    if not still_check:  # есть спасительный ход!
+                    if not still_check:
                         return False
         
-        return True  # все ходы оставляют шах
+        return True
 
-
+    def make_random_move(self):
+        available_pieces = []
+        for fr in range(8):
+            for fc in range(8):
+                piece = self.board[fr][fc]
+                if piece.isupper() or piece == " " or self.calculate_steps(fr, fc) == []: continue
+                available_pieces.append((fr, fc))
+                
+        n = random.randrange(0, len(available_pieces))
+        random_piece = available_pieces[n]
+        print("random_piece: ", random_piece)
+        available_steps = self.calculate_steps(random_piece[0], random_piece[1])
+        print("available_steps: ", available_steps)
+        n = random.randrange(0, len(available_steps))
+        random_move = available_steps[n]
+        move = Move(from_row=random_piece[0], from_col=random_piece[1], to_row=random_move[0], to_col=random_move[1])
+        return self.make_move(move)
+                
     def find_piece(self, target):
-        pos = None
         for r in range(8):
             for c in range(8):
                 if self.board[r][c] == target:
@@ -123,15 +162,9 @@ class ChessGame:
                 piece = self.board[r][c]
                 if piece != " " and opponent_color(piece):
                     attacks = self.calculate_steps(r, c)
-                    print(f"{piece}({r},{c}) attacks: {attacks}")
                     if king_pos in attacks:
-                        print("CHECK!")
                         return True
-        print("No check")
         return False
-
-
-
 
     def king_steps(self, isWhite, row, col):
         if isWhite: check = str.islower
@@ -149,6 +182,28 @@ class ChessGame:
             elif check(target):
                 res.append([r, c])
                 continue
+
+        # Castling
+        if (isWhite and not self.isWKingMoved) or (not isWhite and not self.isBKingMoved):
+            if isWhite: default_row = 7
+            else: default_row = 0
+            rc = 5
+            lc = 3
+            # go right
+            while rc < 7 and self.board[default_row][rc] == " ":
+                rc += 1
+            
+            # go left
+            while lc >= 0 and self.board[default_row][lc] == " ":
+                lc -= 1
+                
+            # Check is the Rock is on the right
+            if (isWhite and self.board[default_row][rc] == "R") or (not isWhite and self.board[default_row][rc] == "r"):
+                res.append([row, col + 2])
+
+            # Check is the Rock is on the left
+            if (isWhite and self.board[default_row][lc] == "R") or (not isWhite and self.board[default_row][lc] == "r"):
+                res.append([row, col - 2])
 
         return res
 
