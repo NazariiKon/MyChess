@@ -1,0 +1,325 @@
+import random
+
+from src.chess.models import Move
+
+
+default_board = [
+    ["r","n","b","q","k","b","n","r"],
+    ["p","p","p","p","p","p","p","p"],
+    [" "," "," "," "," "," "," "," "],
+    [" "," "," "," "," "," "," "," "],
+    [" "," "," "," "," "," "," "," "],
+    [" "," "," "," "," "," "," "," "],
+    ["P","P","P","P","P","P","P","P"],
+    ["R","N","B","Q","K","B","N","R"]
+]
+
+class ChessGame:
+
+    def __init__(self):
+        self.board = [row[:] for row in default_board]
+        self.isWhiteTurn = True
+        self.isWKingMoved = False
+        self.isBKingMoved = False
+
+    def get_board_copy(self):
+        return [[self.board[r][c] for c in range(8)] for r in range(8)]
+    
+    def get_current_board():
+        return [row[:] for row in default_board]
+
+    def get_board(self):
+        return [row[:] for row in self.board]
+
+    def make_move(self, move: Move):
+        piece = self.board[move.from_row][move.from_col]
+        if self.isWhiteTurn and piece.islower():
+            return {"Error": "White's turn"}
+        if not self.isWhiteTurn and piece.isupper():
+            return {"Error": "Black's turn"}
+        board_cpy = self.get_board_copy()
+        status = None
+
+        steps = self.calculate_steps(move.from_row, move.from_col)
+        if [move.to_row, move.to_col] not in steps:
+            return {"Error": "Invalid move"}
+        self.board[move.to_row][move.to_col] = piece
+        self.board[move.from_row][move.from_col] = " "
+        self.isWhiteTurn = not self.isWhiteTurn
+
+        if piece == "k" or piece == "K" and not self.is_in_check(not self.isWhiteTurn):
+            if abs(move.to_col - move.from_col) == 2:
+                rock_from = 7 if move.to_col > move.from_col else 0
+                rock_to = move.to_col - 1 if move.to_col > move.from_col else move.to_col + 1
+                self.board[move.from_row][rock_to] = self.board[move.from_row][rock_from]
+                self.board[move.from_row][rock_from] = " "
+
+        if self.is_in_check(not self.isWhiteTurn):
+            self.isWhiteTurn = not self.isWhiteTurn
+            self.board = board_cpy
+            if self.is_checkmate():
+                return {"Error": "Game Over"}
+            
+            return {
+                "validate": self.get_board(),
+                "isWhiteTurn": self.isWhiteTurn,
+                "Error": "Save your king!"
+            }
+        
+        if self.is_in_check(self.isWhiteTurn):
+            status = "check"
+            if self.is_checkmate():
+                status = "Game Over"
+
+        if piece == "k": 
+            self.isBKingMoved = True
+        elif piece == "K": 
+            self.isWKingMoved = True
+
+        return {
+            "board": self.get_board(),
+            "isWhiteTurn": self.isWhiteTurn,
+            "status": status or "normal"
+        }
+    
+    def is_checkmate(self) -> bool:
+        if not self.is_in_check(self.isWhiteTurn):
+            return False
+        
+        for fr in range(8):
+            for fc in range(8):
+                piece = self.board[fr][fc]
+                if (self.isWhiteTurn and piece.islower()) or (not self.isWhiteTurn and piece.isupper()):
+                    continue
+                    
+                moves = self.calculate_steps(fr, fc)
+                for to_pos in moves:
+                    tr, tc = to_pos
+                    
+                    saved_from = self.board[fr][fc]
+                    saved_to = self.board[tr][tc]
+                    
+                    self.board[tr][tc] = saved_from
+                    self.board[fr][fc] = " "
+                    
+                    still_check = self.is_in_check(self.isWhiteTurn) 
+                    
+                    self.board[fr][fc] = saved_from
+                    self.board[tr][tc] = saved_to
+                    
+                    if not still_check:
+                        return False
+        
+        return True
+
+    def make_random_move(self):
+        available_pieces = []
+        for fr in range(8):
+            for fc in range(8):
+                piece = self.board[fr][fc]
+                if piece.isupper() or piece == " " or self.calculate_steps(fr, fc) == []: continue
+                available_pieces.append((fr, fc))
+                
+        n = random.randrange(0, len(available_pieces))
+        random_piece = available_pieces[n]
+        print("random_piece: ", random_piece)
+        available_steps = self.calculate_steps(random_piece[0], random_piece[1])
+        print("available_steps: ", available_steps)
+        n = random.randrange(0, len(available_steps))
+        random_move = available_steps[n]
+        move = Move(from_row=random_piece[0], from_col=random_piece[1], to_row=random_move[0], to_col=random_move[1])
+        return self.make_move(move)
+                
+    def find_piece(self, target):
+        for r in range(8):
+            for c in range(8):
+                if self.board[r][c] == target:
+                    return [r, c]
+
+    def isCellUnderAttack(self, row, col, checkColor):
+        for r in range(8):
+            for c in range(8):
+                piece = self.board[r][c]
+                if piece != " " and checkColor(piece):
+                    if piece.lower() == "k": attacks = self.king_steps(piece == "K", r, c)
+                    else: attacks = self.calculate_steps(r, c)
+                    if [row, col] in attacks:
+                        return True
+        return False
+
+    def is_in_check(self, white: bool):
+        target = "K" if white else "k"
+        king_pos = self.find_piece(target)
+        opponent_color = str.islower if white else str.isupper
+        return self.isCellUnderAttack(king_pos[0], king_pos[1], opponent_color)
+    
+    def king_castiling(self, isWhite, row, col):
+        res = []
+        if (isWhite and self.isWKingMoved) or (not isWhite and self.isBKingMoved):
+            return res
+        
+        opponent_color = str.islower if isWhite else str.isupper
+        default_row = 7 if isWhite else 0
+        
+        if self.isCellUnderAttack(row, col, opponent_color):
+            return res
+        
+        path_ok = True
+        for c in range(5, 7):
+            if self.board[default_row][c] != " " or self.isCellUnderAttack(default_row, c, opponent_color):
+                path_ok = False
+        if path_ok and self.board[default_row][7] == ("R" if isWhite else "r"):
+            res.append([row, col + 2])
+        
+        path_ok = True
+        for c in range(1, 4):
+            if self.board[default_row][c] != " " or self.isCellUnderAttack(default_row, c, opponent_color):
+                path_ok = False
+        if path_ok and self.board[default_row][0] == ("R" if isWhite else "r"):
+            res.append([row, col - 2])
+        
+        return res
+
+    def king_steps(self, isWhite, row, col):
+        if isWhite: check = str.islower
+        else: check = str.isupper
+        res = []
+
+        for dr, dc in (1, -1), (1, 1), (1, 0), (0, 1), (0, -1), (-1, -1), (-1, 1), (-1, 0):
+            r = row + dr
+            c = col + dc
+
+            if not(0 <= r < 8 and 0 <= c < 8): continue
+            target = self.board[r][c]
+            if target == " ":
+                res.append([r, c])
+            elif check(target):
+                res.append([r, c])
+                continue
+        return res
+
+    def queen_steps(self, isWhite, row, col):
+        res = []
+
+        res += self.bishop_steps(isWhite, row, col)
+        res += self.rock_steps(isWhite, row, col)
+
+        return res
+
+    def bishop_steps(self, isWhite, row, col):
+        if isWhite: check = str.islower
+        else: check = str.isupper
+
+        res = []
+
+        for dr, dc in ((1, 1), (1, -1), (-1, -1), (-1, 1)):
+            r = row + dr
+            c = col + dc
+
+            while 0 <= r < 8 and 0 <= c < 8:
+                target = self.board[r][c]
+
+                if target == " ":
+                    res.append([r, c])
+                elif check(target):
+                    res.append([r, c])
+                    break
+                else:
+                    break
+
+                r += dr
+                c += dc
+
+        return res
+
+    def rock_steps(self, isWhite, row, col):
+        if isWhite: check = str.islower
+        else: check = str.isupper
+
+        res = []
+
+        for dr, dc in ((1,0), (-1,0), (0,1), (0,-1)):
+            r = row + dr
+            c = col + dc
+
+            while 0 <= r < 8 and 0 <= c < 8:
+                target = self.board[r][c]
+
+                if target == " ":
+                    res.append([r, c])
+                elif check(target):
+                    res.append([r, c])
+                    break
+                else:
+                    break
+
+                r += dr
+                c += dc
+
+        return res
+
+    def knight_steps(self, isWhite, row, col):
+        if isWhite: check = str.islower
+        else: check = str.isupper
+
+        res = []
+        for (cr, cc) in (2, -1), (2, 1), (-2, -1), (-2, 1), (1, 2), (-1, 2), (1, -2), (-1, -2):
+            if not (0 <= row + cr < 8 and 0 <= col + cc < 8): continue
+            target = self.board[row + cr][col + cc]
+            if target == " " or check(target):
+                res.append([row + cr, col + cc])
+
+        return res
+
+    def pawn_steps(self, isWhite, row, col):
+        if row == 7 or row == 0: return None
+        if isWhite:
+            rc = cc = -1
+            check = str.islower
+        else:
+            rc = cc = 1
+            check = str.isupper
+
+        res = []
+
+        # First step
+        if row == 1 and not isWhite and self.board[row + 1][col] == " " and self.board[row + 2][col] == " ":
+            res.append([row + 2, col])
+        elif row == 6 and isWhite and self.board[row - 1][col] == " " and self.board[row - 2][col] == " ":
+            res.append([row - 2, col])
+
+        # Step
+        if self.board[row + rc][col] == " ":
+            res.append([row + rc, col])
+
+        diag_row = row + rc
+
+        if col > 0 and check(self.board[diag_row][col - 1]):
+            res.append([diag_row, col - 1])
+
+        if col < 7 and check(self.board[diag_row][col + 1]):
+            res.append([diag_row, col + 1])
+
+        return res
+
+    def calculate_steps(self, row, col):
+        piece = self.board[row][col]
+        if piece == " ":
+            return []
+        res = []
+        match piece:
+            case "p" | "P":
+                res = self.pawn_steps(piece == "P", row, col)
+            case "r" | "R":
+                res = self.rock_steps(piece == "R", row, col)
+            case "n" | "N":
+                res = self.knight_steps(piece == "N", row, col)
+            case "b" | "B":
+                res = self.bishop_steps(piece == "B", row, col)
+            case "q" | "Q":
+                res = self.queen_steps(piece == "Q", row, col)
+            case "k" | "K":
+                res = self.king_steps(piece == "K", row, col)
+                res += self.king_castiling(piece == "K", row, col)
+
+        return res
