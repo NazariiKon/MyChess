@@ -2,23 +2,27 @@ import type {
     Position,
     PieceType,
     Color,
-    Piece
+    Piece,
+    Move
 } from './types';
 
 class ChessEngine {
     private static readonly DEFAULT_BOARD =
         [["r", "n", "b", "q", "k", "b", "n", "r"],
-        ["p", "p", "p", "p", "p", "p", "p", "p"],
+        ["p", "p", "p", "p", " ", "p", "p", "p"],
         [" ", " ", " ", " ", " ", " ", " ", " "],
+        [" ", " ", " ", " ", " ", "Q", " ", " "],
+        [" ", " ", " ", " ", " ", "q", " ", " "],
         [" ", " ", " ", " ", " ", " ", " ", " "],
-        [" ", " ", " ", " ", " ", " ", " ", " "],
-        [" ", " ", " ", " ", " ", " ", " ", " "],
-        ["P", "P", "P", "P", "P", "P", "P", "P"],
+        ["P", "P", "P", "P", " ", "P", "P", "P"],
         ["R", "N", "B", "Q", "K", "B", "N", "R"]]
 
     private board: (Piece | null)[][] = Array(8).fill(null).map(() => Array(8).fill(null));
     private isWKingMoved: boolean = false;
     private isBKingMoved: boolean = false;
+    private currentColor: Color = "white";
+    private currentTurn: boolean = true;
+    private gameStatus: string = 'normal';
 
     constructor(board?: string[][]) {
         if (board) {
@@ -26,6 +30,133 @@ class ChessEngine {
         } else {
             this.setBoard(ChessEngine.DEFAULT_BOARD);
         }
+    }
+
+    public makeMove(move: Move): boolean {
+        const { from, to } = move;
+        const fromRow = from[0], fromCol = from[1];
+        const toRow = to[0], toCol = to[1];
+        if (!this.isValidPosition(fromRow, fromCol) || !this.isValidPosition(toRow, toCol)) {
+            console.log("Error №1");
+            return false;
+        }
+
+        const piece = this.board[fromRow][fromCol];
+        if (!piece || piece.color !== this.currentColor) {
+            console.log("Error №2");
+            return false;
+        }
+
+        const legalMoves = this.getMoves(piece);
+        if (!legalMoves.some(([r, c]) => r === toRow && c === toCol)) {
+            console.log("Error №3");
+            return false;
+        }
+        this.board[toRow][toCol] = piece;
+        this.board[fromRow][fromCol] = null;
+        piece.position = to;
+
+        if (piece.type === 'k' && Math.abs(toCol - fromCol) === 2) {
+            this.makeCastlingRookMove(fromRow, fromCol, toCol);
+        }
+        const opponentColor = this.currentTurn ? "black" : "white"
+        const opponentInCheck = this.isInCheck(opponentColor);
+        console.log(opponentInCheck);
+        if (opponentInCheck && this.isCheckmate(opponentColor)) {
+            this.gameStatus = 'Game Over';
+        } else if (opponentInCheck) {
+            this.gameStatus = 'check';
+        } else {
+            this.gameStatus = 'normal';
+        }
+
+        this.currentTurn = !this.currentTurn;
+        this.currentColor = this.currentTurn ? "white" : "black";
+        this.isWKingMoved = this.isWKingMoved || (piece.color === 'white' && piece.type === 'k');
+        this.isBKingMoved = this.isBKingMoved || (piece.color === 'black' && piece.type === 'k');
+
+        return true;
+    }
+
+    private makeCastlingRookMove(row: number, fromCol: number, toCol: number): void {
+        const rookCol = toCol > fromCol ? 7 : 0;
+        const rookToCol = toCol > fromCol ? 5 : 3;
+
+        const rook = this.board[row][rookCol];
+        this.board[row][rookToCol] = rook;
+        this.board[row][rookCol] = null;
+    }
+
+    public isInCheck(color: Color): boolean {
+        const kingPos = this.getKingPosition(color);
+        if (!kingPos) return false;
+        console.log(kingPos[0], kingPos[1], color);
+        return this.isCellUnderAttack(kingPos[0], kingPos[1], color);
+    }
+
+    private getKingPosition(color: Color): Position | null {
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                const piece = this.board[r][c];
+                if (piece?.type === 'k' && piece.color === color) {
+                    return [r, c];
+                }
+            }
+        }
+        return null;
+    }
+
+    public isCheckmate(color: Color): boolean {
+        if (!this.isInCheck(color)) return false;
+
+        const pieces = this.getPieces(color);
+
+        for (const piece of pieces) {
+            const moves = this.getMoves(piece);
+
+            for (const [toRow, toCol] of moves) {
+                const savedFrom = this.board[piece.position[0]][piece.position[1]];
+                const savedTo = this.board[toRow][toCol];
+
+                this.board[toRow][toCol] = piece;
+                this.board[piece.position[0]][piece.position[1]] = null;
+
+                if (!this.isInCheck(color)) {
+                    this.board[piece.position[0]][piece.position[1]] = savedFrom;
+                    this.board[toRow][toCol] = savedTo;
+                    return false;
+                }
+
+                this.board[piece.position[0]][piece.position[1]] = savedFrom;
+                this.board[toRow][toCol] = savedTo;
+            }
+        }
+
+        return true;
+    }
+
+
+    public getPieces(color: Color): Piece[] {
+        const pieces: Piece[] = [];
+
+        for (let row = 0; row < 8; row++) {
+            for (let col = 0; col < 8; col++) {
+                const piece = this.board[row][col];
+                if (piece && piece.color === color) {
+                    pieces.push(piece);
+                }
+            }
+        }
+
+        return pieces;
+    }
+
+    public getCurrentTurn(): boolean {
+        return this.currentTurn;
+    }
+
+    public setCurrentTurn(color: boolean) {
+        this.currentTurn = color;
     }
 
     public setBoard(board: string[][]): void {
@@ -69,7 +200,7 @@ class ChessEngine {
         // Captures
         [-1, 1].forEach(colDelta => {
             const newCol = col + colDelta;
-            if (this.isValidPosition(nextRow, newCol) && this.board[nextRow][newCol]?.color !== color) {
+            if (this.isValidPosition(nextRow, newCol) && this.board[nextRow][newCol]?.color !== color && this.board[nextRow][newCol] !== null) {
                 moves.push([nextRow, newCol]);
             }
         });
@@ -133,8 +264,7 @@ class ChessEngine {
                 if (piece && piece.color === color) {
                     const attacks = piece.type === 'k'
                         ? this.getKingMoves(r, c, piece.color)
-                        : this.getMoves(r, c);
-
+                        : this.getMoves(piece);
                     if (attacks.some(([ar, ac]) => ar === row && ac === col)) {
                         return true;
                     }
@@ -148,10 +278,10 @@ class ChessEngine {
     private getKingCastling(row: number, col: number, color: Color): Position[] {
         const moves: Position[] = [];
 
-        if ((color == "white" && this.isWKingMoved) || (color == "black" && this.isBKingMoved))
+        if ((color === "white" && this.isWKingMoved) || (color === "black" && this.isBKingMoved))
             return moves;
 
-        const defaultRow = color == "white" ? 7 : 0;
+        const defaultRow = color === "white" ? 7 : 0;
 
         if (this.isCellUnderAttack(row, col, "black")) {
             return moves;
@@ -183,9 +313,10 @@ class ChessEngine {
     }
 
 
-    getMoves(row: number, col: number): Position[] {
-        const piece = this.board[row][col];
+    getMoves(piece: Piece): Position[] {
         if (!piece) return [];
+        const row = piece.position[0];
+        const col = piece.position[1];
 
         switch (piece.type) {
             case 'p': return this.getPawnMoves(row, col, piece.color);
